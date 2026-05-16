@@ -1,0 +1,17 @@
+{
+  "name": "Clarke Creek Pool Competition",
+  "short_name": "Pool Comp",
+  "description": "Live leaderboard and fixtures for Clarke Creek Pool Competition",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080e0a",
+  "theme_color": "#080e0a",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎱</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
