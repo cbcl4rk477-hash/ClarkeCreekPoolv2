@@ -1318,7 +1318,11 @@ function hydrateState(data) {
   if (data.ptW !== undefined && data.ptW !== null) state.ptW = data.ptW;
   if (data.ptD !== undefined && data.ptD !== null) state.ptD = data.ptD;
   if (data.ptL !== undefined && data.ptL !== null) state.ptL = data.ptL;
-  if (data.players  && data.players.length)        { state.players = data.players; PLAYERS = data.players; }
+  // Restore custom player list — stored in "players" column or fallback to DEFAULT_PLAYERS
+  if (data.players && Array.isArray(data.players) && data.players.length >= 1) {
+    PLAYERS = data.players;
+    state.players = data.players;
+  }
   if (data.groups)                                 state.groups = data.groups;
   if (data.fixtures?.length) {
     state.fixtures = data.fixtures;
