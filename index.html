@@ -1195,6 +1195,7 @@ const DB = {
         ptW:          state.ptW,
         ptD:          state.ptD,
         ptL:          state.ptL,
+        players:      PLAYERS,
         groups:       state.groups,
         fixtures:     state.fixtures,
         knockout:     state.knockout,
@@ -1228,8 +1229,9 @@ const DB = {
 // ============================================================
 
 // ── PLAYER DATA ─────────────────────────────────────────────
-// Static list — edit here to add/remove players
-const PLAYERS = [
+// Default players — used only on first load if no saved players exist.
+// After that, players are managed via the admin UI and saved to Supabase.
+const DEFAULT_PLAYERS = [
   {id:"p0",  name:"Alex Rickard",    short:"AR", roster:"1on1off_wed", color:"#c0392b"},
   {id:"p1",  name:"Luke Edwards",    short:"LE", roster:"1on1off_wed", color:"#2980b9"},
   {id:"p2",  name:"Luke Boardman",   short:"LB", roster:"1on1off_wed", color:"#27ae60"},
@@ -1247,15 +1249,36 @@ const PLAYERS = [
   {id:"p14", name:"Degen Runge",     short:"DR", roster:"1on1off_mon", color:"#b8860b"},
 ];
 
+// Live player list — mutated by admin, persisted to Supabase
+let PLAYERS = [...DEFAULT_PLAYERS];
+
+// Available avatar colors for new players
+const AVATAR_COLORS = [
+  "#c0392b","#2980b9","#27ae60","#8e44ad","#e67e22","#16a085",
+  "#d35400","#1abc9c","#f39c12","#6c5ce7","#e84393","#00b894",
+  "#e17055","#0984e3","#b8860b","#636e72","#fd79a8","#00cec9",
+  "#fdcb6e","#6c5ce7","#a29bfe","#55efc4","#fab1a0","#74b9ff"
+];
+
+function nextColor() {
+  const used = PLAYERS.map(p => p.color);
+  return AVATAR_COLORS.find(c => !used.includes(c)) || AVATAR_COLORS[PLAYERS.length % AVATAR_COLORS.length];
+}
+
+function makePlayerId() {
+  return "p" + Date.now();
+}
+
 // ── DEFAULT STATE ───────────────────────────────────────────
 function makeDefaultState() {
   return {
     tab:          "leaderboard",
     compStart:    new Date().toISOString().split("T")[0],
-    playerStarts: Object.fromEntries(PLAYERS.map(p => [p.id, ""])),
+    playerStarts: Object.fromEntries(DEFAULT_PLAYERS.map(p => [p.id, ""])),
     ptW: CONFIG.DEFAULT_PT_WIN,
     ptD: CONFIG.DEFAULT_PT_DRAW,
     ptL: CONFIG.DEFAULT_PT_LOSS,
+    players:  null, // null = use DEFAULT_PLAYERS; array = custom player list
     groups:   null,
     fixtures: [],
     knockout: makeKnockout(),
@@ -1295,6 +1318,7 @@ function hydrateState(data) {
   if (data.ptW !== undefined && data.ptW !== null) state.ptW = data.ptW;
   if (data.ptD !== undefined && data.ptD !== null) state.ptD = data.ptD;
   if (data.ptL !== undefined && data.ptL !== null) state.ptL = data.ptL;
+  if (data.players  && data.players.length)        { state.players = data.players; PLAYERS = data.players; }
   if (data.groups)                                 state.groups = data.groups;
   if (data.fixtures?.length) {
     state.fixtures = data.fixtures;
@@ -2047,6 +2071,28 @@ function renderSetup() {
       </button>
       ${state.fixtures.length?`<div class="warn-text">⚠️ Re-drawing clears all results</div>`:""}
     </div>
+
+    <!-- PLAYER MANAGEMENT -->
+    <div class="card">
+      <div class="card-title">👥 Player Management</div>
+      <div class="info-banner">Add or remove players. New players can be added to the current season or saved for the next one.</div>
+      ${PLAYERS.map(p => `
+        <div class="setup-player-row" style="justify-content:space-between;">
+          <div style="display:flex;align-items:center;gap:8px;flex:1;">
+            ${av(p.id,28)}
+            <div>
+              <div style="font-weight:600;font-size:13px;">${p.name}</div>
+              <div style="font-size:10px;color:var(--text-muted);">${CONFIG.ROSTER_LABELS[p.roster]||p.roster}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-felt" style="padding:4px 10px;font-size:11px;" onclick="showEditPlayer('${p.id}')">Edit</button>
+            <button class="btn btn-danger" style="padding:4px 10px;font-size:11px;" onclick="removePlayer('${p.id}')">✕</button>
+          </div>
+        </div>`).join("")}
+      <button class="btn btn-gold" style="width:100%;margin-top:10px;" onclick="showAddPlayer()">+ Add New Player</button>
+    </div>
+
     <div class="card admin-card">
       <div class="card-title">⚙️ Admin Tools</div>
       <div class="admin-tools">
@@ -2284,6 +2330,158 @@ function render() {
     </div>`;
 
   renderSyncIndicator();
+}
+
+// ── PLAYER MANAGEMENT ────────────────────────────────────────
+
+function showAddPlayer() {
+  showModal(`
+    <div class="profile-modal">
+      <h2 style="font-family:var(--font-display);color:var(--gold);margin-bottom:16px;">Add New Player</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input id="np-name"   class="admin-pw-input" style="letter-spacing:0;text-align:left;" placeholder="Full name e.g. John Smith">
+        <input id="np-short"  class="admin-pw-input" style="letter-spacing:0;text-align:left;" placeholder="Short code e.g. JS (2-3 letters)">
+        <select id="np-roster" class="filter-select" style="width:100%;padding:12px;">
+          ${Object.entries(CONFIG.ROSTER_LABELS).map(([v,l])=>`<option value="${v}">${l}</option>`).join("")}
+        </select>
+        <input id="np-date" type="date" class="date-input" style="width:100%;padding:12px;" placeholder="First ON date">
+        <div id="np-color-row" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;">
+          ${AVATAR_COLORS.slice(0,12).map(c=>`<div onclick="selectNewColor('${c}')" style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;border:2px solid transparent;" id="color-${c.replace('#','')}"></div>`).join("")}
+        </div>
+        <input id="np-color-val" type="hidden" value="${nextColor()}">
+      </div>
+      <div style="margin-top:6px;">
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Add to current season:</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          ${state.groups ? `
+            <button class="btn btn-gold" onclick="addPlayer('A')">Add to Group A</button>
+            <button class="btn btn-gold" onclick="addPlayer('B')">Add to Group B</button>` : ""}
+          <button class="btn btn-felt" onclick="addPlayer(null)">Save for Next Season</button>
+        </div>
+      </div>
+      <button class="btn btn-felt" style="width:100%;margin-top:10px;" onclick="closeModal()">Cancel</button>
+    </div>`);
+  // Pre-select the next available color
+  setTimeout(() => {
+    const c = nextColor();
+    const el = document.getElementById("color-" + c.replace('#',''));
+    if (el) el.style.border = "2px solid white";
+  }, 50);
+}
+
+function selectNewColor(color) {
+  document.getElementById("np-color-val").value = color;
+  document.querySelectorAll("#np-color-row div").forEach(d => d.style.border = "2px solid transparent");
+  const el = document.getElementById("color-" + color.replace('#',''));
+  if (el) el.style.border = "2px solid white";
+}
+
+function addPlayer(groupLabel) {
+  const name  = document.getElementById("np-name")?.value.trim();
+  const short = document.getElementById("np-short")?.value.trim().toUpperCase();
+  const roster= document.getElementById("np-roster")?.value;
+  const date  = document.getElementById("np-date")?.value;
+  const color = document.getElementById("np-color-val")?.value || nextColor();
+
+  if (!name || !short) { toast("Name and short code are required","error"); return; }
+  if (short.length > 3) { toast("Short code must be 2-3 letters","error"); return; }
+
+  const newPlayer = { id: makePlayerId(), name, short, roster, color };
+  PLAYERS.push(newPlayer);
+  state.players = PLAYERS;
+
+  // Set start date if provided
+  if (date) state.playerStarts[newPlayer.id] = date;
+
+  // Add to group and generate their fixtures mid-season
+  if (groupLabel && state.groups) {
+    state.groups[groupLabel].push(newPlayer);
+    const newFix = buildGroupFixtures([newPlayer], groupLabel)
+      .map(f => ({...f, id:`${groupLabel}-new-${Date.now()}-${Math.random().toString(36).slice(2)}`}));
+    // Generate fixtures vs all existing group members
+    const existingGroupPlayers = state.groups[groupLabel].filter(p => p.id !== newPlayer.id);
+    let fid = state.fixtures.length;
+    for (const opp of existingGroupPlayers) {
+      const start = pd(state.compStart);
+      for (let d = 0; d < 700; d++) {
+        const date = new Date(start.getTime() + d * MS_DAY);
+        if (isOnSite(newPlayer, date) && isOnSite(opp, date)) {
+          state.fixtures.push({
+            id: `${groupLabel}-add-${fid++}`,
+            p1: newPlayer.id, p2: opp.id,
+            date: ds(date), result: null, group: groupLabel
+          });
+          break;
+        }
+      }
+    }
+    toast(`${name} added to Group ${groupLabel} with fixtures generated!`, "success");
+  } else {
+    toast(`${name} saved — will join next season`, "success");
+  }
+
+  scheduleSave();
+  closeModal();
+  render();
+}
+
+function showEditPlayer(pid) {
+  const p = getPlayer(pid);
+  if (!p) return;
+  showModal(`
+    <div class="profile-modal">
+      <h2 style="font-family:var(--font-display);color:var(--gold);margin-bottom:16px;">Edit Player</h2>
+      <div style="display:flex;flex-direction:column;gap:10px;">
+        <input id="ep-name"  class="admin-pw-input" style="letter-spacing:0;text-align:left;" value="${p.name}" placeholder="Full name">
+        <input id="ep-short" class="admin-pw-input" style="letter-spacing:0;text-align:left;" value="${p.short}" placeholder="Short code">
+        <select id="ep-roster" class="filter-select" style="width:100%;padding:12px;">
+          ${Object.entries(CONFIG.ROSTER_LABELS).map(([v,l])=>`<option value="${v}" ${p.roster===v?"selected":""}>${l}</option>`).join("")}
+        </select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
+        <button class="btn btn-gold" style="flex:1;" onclick="saveEditPlayer('${pid}')">Save</button>
+        <button class="btn btn-felt" style="flex:1;" onclick="closeModal()">Cancel</button>
+      </div>
+    </div>`);
+}
+
+function saveEditPlayer(pid) {
+  const p = getPlayer(pid);
+  if (!p) return;
+  const name   = document.getElementById("ep-name")?.value.trim();
+  const short  = document.getElementById("ep-short")?.value.trim().toUpperCase();
+  const roster = document.getElementById("ep-roster")?.value;
+  if (!name || !short) { toast("Name and short code required","error"); return; }
+  p.name = name; p.short = short; p.roster = roster;
+  // Update in groups too if present
+  if (state.groups) {
+    for (const g of ["A","B"]) {
+      const idx = state.groups[g]?.findIndex(x => x.id === pid);
+      if (idx >= 0) state.groups[g][idx] = {...state.groups[g][idx], name, short, roster};
+    }
+  }
+  state.players = PLAYERS;
+  scheduleSave();
+  closeModal();
+  render();
+  toast(`${name} updated`, "success");
+}
+
+function removePlayer(pid) {
+  const p = getPlayer(pid);
+  if (!p) return;
+  if (!confirm(`Remove ${p.name} from the player list? Their existing results will be kept.`)) return;
+  PLAYERS = PLAYERS.filter(x => x.id !== pid);
+  state.players = PLAYERS;
+  // Remove from groups if present
+  if (state.groups) {
+    for (const g of ["A","B"]) {
+      state.groups[g] = state.groups[g]?.filter(x => x.id !== pid) || [];
+    }
+  }
+  scheduleSave();
+  render();
+  toast(`${p.name} removed`, "info");
 }
 
 // ── BOOT ─────────────────────────────────────────────────────
