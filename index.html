@@ -1076,7 +1076,7 @@ const CONFIG = {
   // This key bypasses RLS and allows admin writes.
   // Keep this secret — it's safe here because the RLS SQL also restricts
   // anonymous writes independently.
-  SUPABASE_SERVICE_KEY: "sb_secret_Gud4G3kfNjSYd1jmQG7mTA_gA87-ZZr",
+  SUPABASE_SERVICE_KEY: "",
 
   // Admin password — stored as SHA-256 hash (not plain text)
   // Current password is: Clarke2024!
@@ -1177,11 +1177,11 @@ const LEGACY_KEY = "cc_pool_v3";
 let sbAdmin = null;
 
 function getWriteClient() {
-  if (CONFIG.SUPABASE_SERVICE_KEY && CONFIG.SUPABASE_SERVICE_KEY !== "YOUR_SERVICE_ROLE_KEY") {
+  if (CONFIG.SUPABASE_SERVICE_KEY) {
     if (!sbAdmin) sbAdmin = supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_SERVICE_KEY);
     return sbAdmin;
   }
-  return sb; // fallback if service key not set
+  return sb; // use anon key — RLS allows writes, app password protects access
 }
 
 const DB = {
