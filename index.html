@@ -1467,9 +1467,10 @@ function seededShuffle(arr, seed) {
 
 function drawAndGenerate() {
   if (!confirm("This will draw new groups and generate all fixtures. Any existing results will be lost. Continue?")) return;
-  const seed = Date.now();
+  const seed     = Date.now();
   const shuffled = seededShuffle(PLAYERS, seed);
-  state.groups   = { A: shuffled.slice(0, 8), B: shuffled.slice(8, 15) };
+  const half     = Math.ceil(shuffled.length / 2); // splits evenly, A gets extra if odd
+  state.groups   = { A: shuffled.slice(0, half), B: shuffled.slice(half) };
   state.fixtures = [
     ...buildGroupFixtures(state.groups.A, "A"),
     ...buildGroupFixtures(state.groups.B, "B")
@@ -1478,7 +1479,7 @@ function drawAndGenerate() {
   state.tab      = "groups";
   scheduleSave();
   render();
-  toast("Groups drawn and fixtures generated!", "success");
+  toast(`Groups drawn: ${state.groups.A.length} in A, ${state.groups.B.length} in B`, "success");
 }
 
 function resetSeason() {
